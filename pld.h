@@ -6,7 +6,9 @@
 #define _GNU_SOURCE
 #endif
 
-#ifdef _MSC_VER
+#if defined(__cplusplus)
+#define PLDTYPEOF(x) decltype(x)
+#elif defined(_MSC_VER)
 #define PLDTYPEOF(x) __typeof__(x)
 #else
 #define PLDTYPEOF(x) typeof(x)
@@ -199,7 +201,7 @@ static PLD_LibHandle PLD_Private_dlopen_wrapper(const char *name)
 
 
 #define PLD(name) \
-	PLD_LibHandle PLDH(void) { \
+	static PLD_LibHandle PLDH(void) { \
 		static PLD_LibHandle handle = NULL; \
 		if (handle == NULL) handle = PLD_Private_dlopen_wrapper(name); \
 		return handle; \
