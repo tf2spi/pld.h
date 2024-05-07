@@ -27,10 +27,6 @@ static int PLD_Private_strlen(const char *s)
 
 #ifdef _WIN32
 #include <windows.h>
-static void *PLD_Private_ErrCode(void)
-{
-	return (void *)(DWORD_PTR)GetLastError();
-}
 static void PLD_Private_WriteString(const char *s)
 {
 	DWORD dummy;
@@ -48,12 +44,7 @@ static void PLD_Private_FormatError(void *code, char *s, int len, const char *na
 		(va_list *)&arg);
 }
 #else // _WIN32
-#include <unistd.h>
 #include <dlfcn.h>
-static void *PLD_Private_ErrCode(void)
-{
-	return dlerror();
-}
 static void PLD_Private_WriteString(const char *s)
 {
 	write(2, s, PLD_Private_strlen(s));
@@ -143,10 +134,16 @@ static PLD_ProcAddress PLD_Private_dlsym(PLD_LibHandle handle, const char *name)
 	return GetProcAddress(handle, name);
 }
 
+static void *PLD_Private_ErrCode(void)
+{
+	return (void *)(DWORD_PTR)GetLastError();
+}
+
 #else // _WIN32
 
 #ifndef PLD_PRIVATE_LOG_INCLUDED
 #include <dlfcn.h>
+#include <stddef.h>
 #endif
 
 typedef void *PLD_LibHandle;
@@ -167,6 +164,11 @@ static PLD_ProcAddress PLD_Private_dlsym(PLD_LibHandle handle, const char *name)
 	if (handle == NULL)
 		handle = (PLD_LibHandle)RTLD_NEXT;
 	return dlsym(handle, name);
+}
+
+static void *PLD_Private_ErrCode(void)
+{
+	return dlerror();
 }
 
 #endif // _WIN32
