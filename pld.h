@@ -19,11 +19,25 @@ static int PLD_Private_strlen(const char *s)
 #define PLDLOG(message, name, err) PLD_Private_Log(message, name, err)
 #endif
 
+// Private dlopen function has platform-specific behavior when name == NULL
+// * Windows: Return GetModuleHandleA(NULL)
+// * POSIX: Return RTLD_NEXT
+//
+// Private dlsym function has platform-specific behavior when handle == NULL
+// * Windows: Use GetModuleHandleA(NULL) instead
+// * POSIX: Use RTLD_NEXT instead
 #ifdef _WIN32
 
 #include <windows.h>
+typedef FARPROC PLD_ProcAddress;
+typedef HMODULE PLD_LibHandle;
 typedef DWORD PLD_ErrCode;
 static void PLD_Private_Log(const char *, const char *, PLD_ErrCode);
+
+static PLD_ErrCode PLD_Private_ErrCode(void)
+{
+	return GetLastError();
+}
 
 static void PLD_Private_WriteString(const char *s)
 {
@@ -43,32 +57,20 @@ static void PLD_Private_FormatError(DWORD code, char *s, int len)
 		(va_list *)&arg);
 }
 
-static HMODULE PLD_Private_LoadLibrary_wrapper(LPCSTR lpLibFileName)
+static PLD_LibHandle PLD_Private_dlopen(const char *name)
 {
-	HMODULE hModule = GetModuleHandleA(lpLibFileName);
-	if (hModule == NULL)
-		hModule = LoadLibraryA(lpLibFileName);
-	if (hModule == NULL)
-		PLDLOG("Failed to load library!", lpLibFileName, GetLastError());
-	return hModule;
+	PLD_LibHandle handle = GetModuleHandleA(name);
+	if (handle == NULL)
+		handle = LoadLibraryA(name);
+	return handle;
 }
 
-static FARPROC PLD_Private_GetProcAddress_wrapper(HMODULE hModule, LPCSTR lpProcName)
+static PLD_ProcAddress PLD_Private_dlsym(PLD_LibHandle handle, const char *name)
 {
-	FARPROC lpProc = GetProcAddress(hModule, lpProcName);
-	if (lpProc == NULL)
-		PLDLOG("Failed to load procedure!", lpProcName, GetLastError());
-	return lpProc;
+	if (handle == NULL)
+		handle = GetModuleHandleA(NULL);
+	return GetProcAddress(handle, name);
 }
-
-#define PLD(name) \
-	static HMODULE PLDH(void) { \
-		static HMODULE hModule = NULL; \
-		if (hModule == NULL) hModule =  PLD_Private_LoadLibrary_wrapper(name); \
-		return hModule; \
-	} \
-
-#define PFN(name) ((PLDTYPEOF(&name))PLD_Private_GetProcAddress_wrapper(PLDH(), #name))
 
 #else
 
@@ -79,8 +81,15 @@ static FARPROC PLD_Private_GetProcAddress_wrapper(HMODULE hModule, LPCSTR lpProc
 #include <string.h>
 #include <dlfcn.h>
 
+typedef void *PLD_ProcAddress;
+typedef void *PLD_LibHandle;
 typedef intptr_t PLD_ErrCode;
 static void PLD_Private_Log(const char *, const char *, PLD_ErrCode);
+
+static PLD_ErrCode PLD_Private_ErrCode(void)
+{
+	return (intptr_t)dlerror();
+}
 
 static void PLD_Private_WriteString(const char *s)
 {
@@ -93,36 +102,79 @@ static void PLD_Private_FormatError(intptr_t code, char *s, int len)
 	strncat(s, (const char *)code, len);
 }
 
-static void *PLD_Private_dlopen_wrapper(const char *name)
+static PLD_LibHandle PLD_Private_dlopen(const char *name)
 {
 	if (name == NULL)
-		return (void *)RTLD_NEXT;
+		return (PLD_LibHandle)RTLD_NEXT;
 	void *handle = dlopen(name, RTLD_NOLOAD);
 	if (handle == NULL)
 		handle = dlopen(name, RTLD_LAZY);
-	if (handle == NULL)
-		PLDLOG("Failed to load library!", name, (intptr_t)dlerror());
 	return handle;
 }
 
-static void *PLD_Private_dlsym_wrapper(void *handle, const char *name)
+static PLD_ProcAddress PLD_Private_dlsym(PLD_LibHandle handle, const char *name)
 {
-	void *sym = dlsym(handle, name);
+	if (handle == NULL)
+		handle = (PLD_LibHandle)RTLD_NEXT;
+	return dlsym(handle, name);
+}
+
+
+#endif
+
+static PLD_ProcAddress PLD_Private_dlsym_wrapper(PLD_LibHandle handle, const char *name)
+{
+	if (name == NULL) {
+		PLDLOG("NULL name provided for procedure!", "???", 0);
+		return NULL;
+	}
+	if (handle == NULL)
+		handle = PLD_Private_dlopen(NULL);
+	PLD_ProcAddress sym = PLD_Private_dlsym(handle, name);
 	if (sym == NULL)
-		PLDLOG("Failed to load procedure!", name, (intptr_t)dlerror());
+		PLDLOG("Failed to load procedure!", name, PLD_Private_ErrCode());
 	return sym;
 }
 
+static PLD_LibHandle PLD_Private_dlopen_wrapper(const char *name)
+{
+	// On Linux, RTLD_NEXT is NULL, so check if the
+	// name is NULL before concluding it's an error
+	PLD_LibHandle handle = PLD_Private_dlopen(name);
+	if (handle == NULL && name != NULL)
+		PLDLOG("Failed to load library!", name, PLD_Private_ErrCode());
+	return handle;
+}
+
+
 #define PLD(name) \
-	static void *PLDH(void) { \
-		static void *handle = NULL; \
+	PLD_LibHandle PLDH(void) { \
+		static PLD_LibHandle handle = NULL; \
 		if (handle == NULL) handle = PLD_Private_dlopen_wrapper(name); \
 		return handle; \
 	} \
 
-#define PFN(name) ((PLDTYPEOF(&name))PLD_Private_dlsym_wrapper(PLDH(), #name))
+// For importing by ordinal on Windows or just using
+// another name in a library for whatever reason
+#define PFNALT(name, alt) ((PLDTYPEOF(&name))PLD_Private_dlsym_wrapper(PLDH(), alt))
+#define PFN(name) PFNALT(name, #name)
 
+// When code is 0, output nothing
+static void PLD_Private_FormatError_wrapper(intptr_t code, char *s, int len) {
+	// Add an extra newline only on Windows to mimic FormatMessageA
+	if (code == 0) {
+#ifdef _WIN32
+		s[0] = '\r';
+		s[1] = '\n';
+		s[2] = 0;
+#else
+		*s = 0;
 #endif
+		return;
+	}
+	PLD_Private_FormatError(code, s, len);
+}
+
 
 static void PLD_Private_Log(const char *message, const char *name, PLD_ErrCode err)
 {
@@ -135,7 +187,7 @@ static void PLD_Private_Log(const char *message, const char *name, PLD_ErrCode e
 	PLD_Private_WriteString("\n");
 #endif
 	char errtext[256];
-	PLD_Private_FormatError(err, errtext, sizeof(errtext));
+	PLD_Private_FormatError_wrapper(err, errtext, sizeof(errtext));
 	PLD_Private_WriteString(errtext);
 
 	// An extra newline because dlerror doesn't append one
