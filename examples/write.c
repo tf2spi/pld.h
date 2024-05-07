@@ -3,9 +3,10 @@
 #include "../pld.h"
 
 PLD("libc.so.6");
-long write(int fd, void *buf, unsigned long len)
+long write(int fd, const void *buf, unsigned long len)
 {
-	return PFN(write)(fd, buf, len);
+	PFN(h, write);
+	return h(fd, buf, len);
 }
 
 int main(void)
