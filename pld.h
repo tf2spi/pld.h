@@ -199,7 +199,6 @@ static PLD_LibHandle PLD_Private_dlopen_wrapper(const char *name)
 	return handle;
 }
 
-
 #define PLD(name) \
 	static PLD_LibHandle PLDH(void) { \
 		static PLD_LibHandle handle = NULL; \
@@ -209,7 +208,13 @@ static PLD_LibHandle PLD_Private_dlopen_wrapper(const char *name)
 
 // For importing by ordinal on Windows or just using
 // another name in a library for whatever reason
-#define PFNALT(name, alt) ((PLDTYPEOF(&name))PLD_Private_dlsym_wrapper(PLDH(), alt))
-#define PFN(name) PFNALT(name, #name)
+#define PFNALTFIND(name, alt) ((PLDTYPEOF(&name))PLD_Private_dlsym_wrapper(PLDH(), alt))
+#define PFNFIND(name) PFNALTFIND(name, #name)
+
+// Lazily load functions
+#define PFNALT(h, name, alt)  \
+	static PLDTYPEOF(&name) h = NULL; \
+	if (h == NULL) h = PFNALTFIND(name, alt)
+#define PFN(h, name) PFNALT(h, name, #name)
 
 #endif // COOL_PLD_H
