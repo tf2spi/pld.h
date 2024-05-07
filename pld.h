@@ -47,6 +47,8 @@ static void PLD_Private_FormatError(void *code, char *s, int len, const char *na
 }
 #else // _WIN32
 #include <dlfcn.h>
+#include <unistd.h>
+#include <stddef.h>
 static void PLD_Private_WriteString(const char *s)
 {
 	write(2, s, PLD_Private_strlen(s));
