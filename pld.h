@@ -27,6 +27,18 @@ static void PLD_Private_WriteString(const char *s)
 	WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, PLD_Private_strlen(s), &dummy, NULL);
 }
 
+static void PLD_Private_FormatError(int code, char *s, int len)
+{
+	DWORD_PTR arg = (DWORD_PTR)s;
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ARGUMENT_ARRAY,
+		NULL,
+		code,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+		s,
+		len,
+		(va_list *)&arg);
+}
+
 static HMODULE PLD_Private_LoadLibrary_wrapper(LPCSTR lpLibFileName)
 {
 	HMODULE hModule = GetModuleHandleA(lpLibFileName);
@@ -60,24 +72,16 @@ static FARPROC PLD_Private_GetProcAddress_wrapper(HMODULE hModule, LPCSTR lpProc
 static void PLD_Private_Log(const char *message, const char *name, int err)
 {
 	PLD_Private_WriteString(message);
-	PLD_Private_WriteString(" (");
+	PLD_Private_WriteString(" ");
 	PLD_Private_WriteString(name);
-	PLD_Private_WriteString(", err = ");
-
-	char itoastr[8 + 1];
-	char *iter = &itoastr[sizeof(itoastr) - 1];
-	*iter-- = 0;
-	for (int i = 0; i < sizeof(itoastr) - 1; i++) {
-		int digit = err & 0xf;
-		if (digit >= 9)
-			digit = 'A' + (digit - 10);
-		else
-			digit = '0' + digit;
-		*iter-- = digit;
-		err >>= 4;
-	}
-	PLD_Private_WriteString(++iter);
-	PLD_Private_WriteString(")\n");
+#ifdef _WIN32
+	PLD_Private_WriteString("\r\n");
+#else
+	PLD_Private_WriteString("\n");
+#endif
+	char errtext[256];
+	PLD_Private_FormatError(err, errtext, sizeof(errtext));
+	PLD_Private_WriteString(errtext);
 }
 
 #ifndef PLDLOG
