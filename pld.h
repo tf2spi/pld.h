@@ -15,6 +15,9 @@ static int PLD_Private_strlen(const char *s)
 	return len - 1;
 }
 
+#ifndef PLDLOG
+#define PLDLOG(message, name, err) PLD_Private_Log(message, name, err)
+#endif
 
 #ifdef _WIN32
 
@@ -46,7 +49,7 @@ static HMODULE PLD_Private_LoadLibrary_wrapper(LPCSTR lpLibFileName)
 	if (hModule == NULL)
 		hModule = LoadLibraryA(lpLibFileName);
 	if (hModule == NULL)
-		PLD_Private_Log("Failed to load library!", lpLibFileName, GetLastError());
+		PLDLOG("Failed to load library!", lpLibFileName, GetLastError());
 	return hModule;
 }
 
@@ -54,7 +57,7 @@ static FARPROC PLD_Private_GetProcAddress_wrapper(HMODULE hModule, LPCSTR lpProc
 {
 	FARPROC lpProc = GetProcAddress(hModule, lpProcName);
 	if (lpProc == NULL)
-		PLD_Private_Log("Failed to load procedure!", lpProcName, GetLastError());
+		PLDLOG("Failed to load procedure!", lpProcName, GetLastError());
 	return lpProc;
 }
 
@@ -75,6 +78,7 @@ static FARPROC PLD_Private_GetProcAddress_wrapper(HMODULE hModule, LPCSTR lpProc
 #include <stdint.h>
 #include <string.h>
 #include <dlfcn.h>
+
 typedef intptr_t PLD_ErrCode;
 static void PLD_Private_Log(const char *, const char *, PLD_ErrCode);
 
@@ -97,7 +101,7 @@ static void *PLD_Private_dlopen_wrapper(const char *name)
 	if (handle == NULL)
 		handle = dlopen(name, RTLD_LAZY);
 	if (handle == NULL)
-		PLD_Private_Log("Failed to load library!", name, (intptr_t)dlerror());
+		PLDLOG("Failed to load library!", name, (intptr_t)dlerror());
 	return handle;
 }
 
@@ -105,7 +109,7 @@ static void *PLD_Private_dlsym_wrapper(void *handle, const char *name)
 {
 	void *sym = dlsym(handle, name);
 	if (sym == NULL)
-		PLD_Private_Log("Failed to load procedure!", name, (intptr_t)dlerror());
+		PLDLOG("Failed to load procedure!", name, (intptr_t)dlerror());
 	return sym;
 }
 
@@ -139,9 +143,5 @@ static void PLD_Private_Log(const char *message, const char *name, PLD_ErrCode e
 	PLD_Private_WriteString("\n");
 #endif
 }
-
-#ifndef PLDLOG
-#define PLDLOG(message, name, err) PLD_Private_Log(message, name, err)
-#endif
 
 #endif // COOL_PLD_H
