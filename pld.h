@@ -213,7 +213,7 @@ static PLD_LibHandle PLD_Private_dlopen_wrapper(const char *name)
 #define PFNALTFIND(name, alt) ((PLDTYPEOF(&name))PLD_Private_dlsym_wrapper(PLDH(), alt))
 #define PFNFIND(name) PFNALTFIND(name, #name)
 
-// Lazily load functions
+// Cache functions that are loaded
 #define PFNALT(h, name, alt)  \
 	static PLDTYPEOF(&name) h = NULL; \
 	if (h == NULL) h = PFNALTFIND(name, alt)
